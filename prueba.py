@@ -3,6 +3,7 @@ import re
 import plotly.graph_objects as go
 import streamlit as st
 import plotly.express as px
+import os
 
 
 def filter_data(df):
@@ -90,45 +91,54 @@ def sacar_estadisticas(df):
 
     return df
 
+def uploaded_file():
 
+    # Si no se pudo abrir el archivo por defecto, mostrar el widget de subida de archivos
+    file = st.file_uploader("Elige un archivo Excel", type=["xlsx", "xls"])
+    if file is not None:
+        return file
 
-@st.cache_resource()
-def cargar_datos(file_path):
-    df = pd.read_excel(file_path)
+def cargar_file(file):
+    return pd.read_excel(file)
+
+@st.cache_resource
+def cargar_datos(file):
+    df = cargar_file(file)
     df = filter_data(df)
     df = extract_match_day_value(df)
     df = quedarnos_con_drills(df)
     df = sacar_estadisticas(df)
-    
     return df
 
-# Función para obtener los nombres de los jugadores
 @st.cache_resource
 def cargar_nombres_jugador(df):
     nombres_jugadores = df['Player Full Name (P)'].unique()
     return nombres_jugadores
 
-def grafico_fatiga_individual(df,nombre_jugador_seleccionado):
+def grafico_fatiga_individual(df, nombre_jugador_seleccionado):
     df_filtrado = df[df['Player Full Name (P)'] == nombre_jugador_seleccionado].head(10)
     fig = px.line(df_filtrado, x='Date - Session Date', y='sum_fatiga', labels={'sum_fatiga': 'Nivel de Fatiga'}, title='Nivel de Fatiga de los Jugadores')
+
+    fig.add_trace(go.Scatter(x=df_filtrado['Date - Session Date'], y=df_filtrado.groupby('Date - Session Date')['sum_fatiga_mean'] + df.groupby('Date - Session Date')['sum_fatiga_std'].loc[0],
+                         fill=None, mode='lines', line=dict(color='gray'), name='Media + Desviación Estándar'))
+    fig.add_trace(go.Scatter(x=df['Date - Session Date'], y=df.groupby('Date - Session Date')['sum_fatiga_mean'].loc[0] - df.groupby('Date - Session Date')['sum_fatiga_std'].iloc[0],
+                         fill='tonexty', mode='lines', line=dict(color='gray'), name='Media - Desviación Estándar'))
     fig.update_layout(xaxis_title='Fecha', yaxis_title='Nivel de Fatiga', legend_title='Jugador', hovermode='x unified')
     return fig
+
 def main():
     st.title('Control de la Carga')
-
-   
-    file_path = r"C:\Users\jorge\Desktop\Villarreal CF\Control de la carga\excel-0.xlsx"
-    df = cargar_datos(file_path)
-
-    if df is not None:
+    
+    file = uploaded_file()
+    
+    if file is not None:
+        df = cargar_datos(file)
         nombres_jugadores = cargar_nombres_jugador(df)
         nombre_jugador_seleccionado = st.selectbox("Selecciona un jugador:", nombres_jugadores)
         
-        st.plotly_chart(grafico_fatiga_individual(df,nombre_jugador_seleccionado))
-        st.plotly_chart(grafico_fatiga_individual(df,nombre_jugador_seleccionado))
+        st.plotly_chart(grafico_fatiga_individual(df, nombre_jugador_seleccionado))
     else:
         st.text('No se han cargado los datos')
-
 
 if __name__ == '__main__':
     main()
