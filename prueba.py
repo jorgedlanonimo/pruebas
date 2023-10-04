@@ -50,9 +50,9 @@ def sacar_estadisticas(df):
         for funcion in funciones_agregacion:
             nombre_columna_nueva = f"{columna}_{funcion}"
             if funcion == "quantile":
-                df[nombre_columna_nueva] = df.groupby(["Match Day Value", "Position (P)"])[columna].transform(lambda x: x.quantile(0.15))
+                df[nombre_columna_nueva] = df.groupby(["Match Day Value", "Player Full Name (P)"])[columna].transform(lambda x: x.quantile(0.15))
             else:
-                df[nombre_columna_nueva] = df.groupby(["Match Day Value", "Position (P)"])[columna].transform(funcion)
+                df[nombre_columna_nueva] = df.groupby(["Match Day Value", "Player Full Name (P)"])[columna].transform(funcion)
 
     
         col_indicador = columna + '_indicador'
@@ -84,9 +84,9 @@ def sacar_estadisticas(df):
     for funcion in funciones_agregacion:
         nombre_columna_nueva = f"sum_fatiga_{funcion}"
         if funcion == "quantile":
-            df[nombre_columna_nueva] = df.groupby(["Match Day Value", "Position (P)"])['sum_fatiga'].transform(lambda x: x.quantile(0.15))
+            df[nombre_columna_nueva] = df.groupby(["Match Day Value", "Player Full Name (P)"])['sum_fatiga'].transform(lambda x: x.quantile(0.15))
         else:
-            df[nombre_columna_nueva] = df.groupby(["Match Day Value", "Position (P)"])['sum_fatiga'].transform(funcion)
+            df[nombre_columna_nueva] = df.groupby(["Match Day Value", "Player Full Name (P)"])['sum_fatiga'].transform(funcion)
     df = df.sort_values('Date - Session Date', ascending=False)
 
     return df
@@ -115,15 +115,35 @@ def cargar_nombres_jugador(df):
     nombres_jugadores = df['Player Full Name (P)'].unique()
     return nombres_jugadores
 
-def grafico_fatiga_individual(df, nombre_jugador_seleccionado):
-    df_filtrado = df[df['Player Full Name (P)'] == nombre_jugador_seleccionado].head(10)
-    fig = px.line(df_filtrado, x='Date - Session Date', y='sum_fatiga', labels={'sum_fatiga': 'Nivel de Fatiga'}, title='Nivel de Fatiga de los Jugadores')
+def grafico_fatiga_individual(df, nombre_jugador_seleccionado,num_dias):
+    df_filtrado = df[df['Player Full Name (P)'] == nombre_jugador_seleccionado].head(num_dias)
+    fig = go.Figure()
+    valores_mas=[]
+    valores_menos=[]
+    for i in df_filtrado['Match Day Value']:
+        valores_mas.append(df_filtrado[(df_filtrado['Match Day Value'] == i) & (df_filtrado['Player Full Name (P)'] == 'Íker Álvarez')]['sum_fatiga_mean'].iloc[0] +
+                        df_filtrado[(df_filtrado['Match Day Value'] == i) & (df_filtrado['Player Full Name (P)'] == 'Íker Álvarez')]['sum_fatiga_std'].iloc[0])
+        valores_menos.append(df_filtrado[(df_filtrado['Match Day Value'] == i) & (df_filtrado['Player Full Name (P)'] == 'Íker Álvarez')]['sum_fatiga_mean'].iloc[0] -
+                        df_filtrado[(df_filtrado['Match Day Value'] == i) & (df_filtrado['Player Full Name (P)'] == 'Íker Álvarez')]['sum_fatiga_std'].iloc[0])
 
-    fig.add_trace(go.Scatter(x=df_filtrado['Date - Session Date'], y=df_filtrado.groupby('Date - Session Date')['sum_fatiga_mean'] + df.groupby('Date - Session Date')['sum_fatiga_std'].loc[0],
-                         fill=None, mode='lines', line=dict(color='gray'), name='Media + Desviación Estándar'))
-    fig.add_trace(go.Scatter(x=df['Date - Session Date'], y=df.groupby('Date - Session Date')['sum_fatiga_mean'].loc[0] - df.groupby('Date - Session Date')['sum_fatiga_std'].iloc[0],
-                         fill='tonexty', mode='lines', line=dict(color='gray'), name='Media - Desviación Estándar'))
-    fig.update_layout(xaxis_title='Fecha', yaxis_title='Nivel de Fatiga', legend_title='Jugador', hovermode='x unified')
+
+        # Identificamos los puntos que se salgan del rango sombreado
+    outside_upper = df_filtrado['sum_fatiga'] > valores_mas
+    outside_lower = df_filtrado['sum_fatiga'] < valores_menos
+
+    # Añadimos la línea principal (sum_fatiga)
+    fig.add_trace(go.Scatter(x=df_filtrado['Date - Session Date'], y=df_filtrado['sum_fatiga'], mode='lines', name='Nivel de Fatiga'))
+
+    # Añadimos las áreas sombreadas para la desviación estándar
+    fig.add_trace(go.Scatter(x=df_filtrado['Date - Session Date'], y=valores_mas, fill=None, mode='lines', line=dict(color='gray'), name='Media + Desviación Estándar'))
+    fig.add_trace(go.Scatter(x=df_filtrado['Date - Session Date'], y=valores_menos, fill='tonexty', mode='lines', line=dict(color='gray'), name='Media - Desviación Estándar'))
+
+    # Añadimos marcadores para los puntos que se salen del rango
+    fig.add_trace(go.Scatter(x=df_filtrado[outside_upper | outside_lower]['Date - Session Date'], y=df_filtrado[outside_upper | outside_lower]['sum_fatiga'], mode='markers', marker=dict(color='red', size=8), name='Fuera de Rango'))
+
+    # Configuración adicional del gráfico
+    fig.update_layout(xaxis_title='Fecha', yaxis_title='Nivel de Fatiga', legend_title='Jugador', hovermode='x unified', title='Nivel de Fatiga de los Jugadores')
+
     return fig
 
 def main():
@@ -135,8 +155,9 @@ def main():
         df = cargar_datos(file)
         nombres_jugadores = cargar_nombres_jugador(df)
         nombre_jugador_seleccionado = st.selectbox("Selecciona un jugador:", nombres_jugadores)
+        selected_number = st.slider('Selecciona un número:', min_value=0, max_value=90, value=8)
         
-        st.plotly_chart(grafico_fatiga_individual(df, nombre_jugador_seleccionado))
+        st.plotly_chart(grafico_fatiga_individual(df, nombre_jugador_seleccionado,selected_number))
     else:
         st.text('No se han cargado los datos')
 
