@@ -1,10 +1,17 @@
 import pandas as pd
 import re
-import plotly.graph_objects as go
 import streamlit as st
-import plotly.express as px
-import os
 
+import subprocess
+
+def install_module(module_name):
+    subprocess.check_call(["pip", "install", module_name])
+
+try:
+    import plotly.graph_objects as go
+except ModuleNotFoundError:
+    install_module("plotly")
+    import plotly.graph_objects as go
 
 def filter_data(df):
     df = df[df["Team Name"] == 'Villarreal B']
@@ -101,7 +108,7 @@ def uploaded_file():
 def cargar_file(file):
     return pd.read_excel(file)
 
-@st.cache_resource
+@st.cache
 def cargar_datos(file):
     df = cargar_file(file)
     df = filter_data(df)
@@ -110,7 +117,7 @@ def cargar_datos(file):
     df = sacar_estadisticas(df)
     return df
 
-@st.cache_resource
+@st.cache
 def cargar_nombres_jugador(df):
     nombres_jugadores = df['Player Full Name (P)'].unique()
     return nombres_jugadores
@@ -121,28 +128,30 @@ def grafico_fatiga_individual(df, nombre_jugador_seleccionado,num_dias):
     valores_mas=[]
     valores_menos=[]
     for i in df_filtrado['Match Day Value']:
-        valores_mas.append(df_filtrado[(df_filtrado['Match Day Value'] == i) & (df_filtrado['Player Full Name (P)'] == 'Íker Álvarez')]['sum_fatiga_mean'].iloc[0] +
-                        df_filtrado[(df_filtrado['Match Day Value'] == i) & (df_filtrado['Player Full Name (P)'] == 'Íker Álvarez')]['sum_fatiga_std'].iloc[0])
-        valores_menos.append(df_filtrado[(df_filtrado['Match Day Value'] == i) & (df_filtrado['Player Full Name (P)'] == 'Íker Álvarez')]['sum_fatiga_mean'].iloc[0] -
-                        df_filtrado[(df_filtrado['Match Day Value'] == i) & (df_filtrado['Player Full Name (P)'] == 'Íker Álvarez')]['sum_fatiga_std'].iloc[0])
+        selection_mean = df_filtrado[(df_filtrado['Match Day Value'] == i) & (df_filtrado['Player Full Name (P)'] == 'Íker Álvarez')]['sum_fatiga_mean']
+        selection_std = df_filtrado[(df_filtrado['Match Day Value'] == i) & (df_filtrado['Player Full Name (P)'] == 'Íker Álvarez')]['sum_fatiga_std']
+        print(selection_std)
+        if not selection_mean.empty:
+            valores_mas.append(selection_mean.iloc[0] + selection_std.iloc[0])
+            valores_menos.append(selection_mean.iloc[0] - selection_std.iloc[0])
 
+    if(len(valores_mas) == len(df_filtrado)):
+            # Identificamos los puntos que se salgan del rango sombreado
+        outside_upper = df_filtrado['sum_fatiga'] > valores_mas
+        outside_lower = df_filtrado['sum_fatiga'] < valores_menos
 
-        # Identificamos los puntos que se salgan del rango sombreado
-    outside_upper = df_filtrado['sum_fatiga'] > valores_mas
-    outside_lower = df_filtrado['sum_fatiga'] < valores_menos
+        # Añadimos la línea principal (sum_fatiga)
+        fig.add_trace(go.Scatter(x=df_filtrado['Date - Session Date'], y=df_filtrado['sum_fatiga'], mode='lines', name='Nivel de Fatiga'))
 
-    # Añadimos la línea principal (sum_fatiga)
-    fig.add_trace(go.Scatter(x=df_filtrado['Date - Session Date'], y=df_filtrado['sum_fatiga'], mode='lines', name='Nivel de Fatiga'))
+        # Añadimos las áreas sombreadas para la desviación estándar
+        fig.add_trace(go.Scatter(x=df_filtrado['Date - Session Date'], y=valores_mas, fill=None, mode='lines', line=dict(color='gray'), name='Media + Desviación Estándar'))
+        fig.add_trace(go.Scatter(x=df_filtrado['Date - Session Date'], y=valores_menos, fill='tonexty', mode='lines', line=dict(color='gray'), name='Media - Desviación Estándar'))
 
-    # Añadimos las áreas sombreadas para la desviación estándar
-    fig.add_trace(go.Scatter(x=df_filtrado['Date - Session Date'], y=valores_mas, fill=None, mode='lines', line=dict(color='gray'), name='Media + Desviación Estándar'))
-    fig.add_trace(go.Scatter(x=df_filtrado['Date - Session Date'], y=valores_menos, fill='tonexty', mode='lines', line=dict(color='gray'), name='Media - Desviación Estándar'))
+        # Añadimos marcadores para los puntos que se salen del rango
+        fig.add_trace(go.Scatter(x=df_filtrado[outside_upper | outside_lower]['Date - Session Date'], y=df_filtrado[outside_upper | outside_lower]['sum_fatiga'], mode='markers', marker=dict(color='red', size=8), name='Fuera de Rango'))
 
-    # Añadimos marcadores para los puntos que se salen del rango
-    fig.add_trace(go.Scatter(x=df_filtrado[outside_upper | outside_lower]['Date - Session Date'], y=df_filtrado[outside_upper | outside_lower]['sum_fatiga'], mode='markers', marker=dict(color='red', size=8), name='Fuera de Rango'))
-
-    # Configuración adicional del gráfico
-    fig.update_layout(xaxis_title='Fecha', yaxis_title='Nivel de Fatiga', legend_title='Jugador', hovermode='x unified', title='Nivel de Fatiga de los Jugadores')
+        # Configuración adicional del gráfico
+        fig.update_layout(xaxis_title='Fecha', yaxis_title='Nivel de Fatiga', legend_title='Jugador', hovermode='x unified', title='Nivel de Fatiga de los Jugadores')
 
     return fig
 
